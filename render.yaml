@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: money-manager-api
+    env: python
+    region: singapore
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase: postgresdb
+      - key: SECRET_KEY
+        generateValue: true
+
+databases:
+  - name: postgresdb
+    region: singapore
