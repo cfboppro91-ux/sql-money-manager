@@ -1,16 +1,18 @@
+# schema/transaction.py
 from pydantic import BaseModel
+from uuid import UUID
 
 class TransactionBase(BaseModel):
     type: str  # income / expense
     amount: float
     note: str | None = None
-    category_id: str | None = None
+    category_id: UUID | None = None  # 🔥 sửa lại
 
 class TransactionCreate(TransactionBase):
     pass
 
 class TransactionOut(TransactionBase):
-    id: str
+    id: UUID  # 🔥 sửa lại
 
     class Config:
         orm_mode = True
