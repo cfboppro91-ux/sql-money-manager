@@ -1,7 +1,7 @@
 # schema/transaction.py
 from pydantic import BaseModel
 from uuid import UUID
-
+from datetime import datetime
 class TransactionBase(BaseModel):
     type: str  # income / expense
     amount: float
