@@ -93,6 +93,7 @@ def list_family(
                 id=link.id,
                 member_id=member.id,
                 email=member.email,
+                display_name=display_name,
                 total_income=total_income,
                 total_expense=total_expense,
                 total_wallet_balance=total_wallet_balance,
