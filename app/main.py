@@ -4,10 +4,7 @@ from fastapi.openapi.utils import get_openapi
 
 from app.database import Base, engine
 from app.routers import auth, category, wallet, transaction, budget, family
-from app.database import engine
-engine.execute(
-    "ALTER TABLE family_members ADD COLUMN status VARCHAR NOT NULL DEFAULT 'pending';"
-)
+
 Base.metadata.create_all(bind=engine)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
