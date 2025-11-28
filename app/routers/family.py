@@ -82,6 +82,11 @@ def list_family(
         total_wallet_balance = get_user_current_wallet_balance(
             db, member.id, total_income, total_expense
         )
+        display_name = (
+            getattr(member, "full_name", None)
+            or getattr(member, "name", None)
+            or member.email.split("@")[0]
+        )
 
         result.append(
             FamilyMemberOut(
@@ -118,7 +123,12 @@ def add_family_member(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Không tìm thấy tài khoản với email này",
         )
-
+    display_name = (
+        payload.display_name
+        or getattr(member, "full_name", None)
+        or getattr(member, "name", None)
+        or member.email.split("@")[0]
+   )
     # check đã tồn tại link chưa
     exists = (
         db.query(FamilyMember)

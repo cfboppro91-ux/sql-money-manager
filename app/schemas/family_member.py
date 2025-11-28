@@ -6,6 +6,7 @@ from typing import Optional
 
 class FamilyAddRequest(BaseModel):
     email: EmailStr  # email tài khoản muốn link
+    display_name: str | None = None
 
 
 class FamilyMemberOut(BaseModel):
