@@ -40,21 +40,18 @@ def get_user_totals(db: Session, user_id: UUID):
 
 
 # --------- helper: tính SỐ DƯ HIỆN TẠI của ví 1 user ---------
-# Số dư hiện tại = tổng balance ban đầu của các ví + thu - chi
 def get_user_current_wallet_balance(
     db: Session,
     user_id: UUID,
     total_income: float,
     total_expense: float,
 ) -> float:
-    # tổng balance ban đầu (từ bảng wallets)
     initial_balance = (
         db.query(func.coalesce(func.sum(Wallet.balance), 0.0))
         .filter(Wallet.user_id == user_id)
         .scalar()
         or 0.0
     )
-
     current_wallet_balance = initial_balance + total_income - total_expense
     return float(current_wallet_balance)
 
@@ -75,15 +72,15 @@ def list_family(
     result: list[FamilyMemberOut] = []
 
     for link, member in links:
-        # tổng thu / chi của member
         total_income, total_expense = get_user_totals(db, member.id)
-
-        # số dư hiện tại (ví ban đầu + thu - chi)
         total_wallet_balance = get_user_current_wallet_balance(
             db, member.id, total_income, total_expense
         )
+
+        # ✅ ƯU TIÊN tên custom nếu sau này m có cột display_name trong FamilyMember
         display_name = (
-            getattr(member, "full_name", None)
+            getattr(link, "display_name", None)  # nếu bảng có cột này
+            or getattr(member, "full_name", None)
             or getattr(member, "name", None)
             or member.email.split("@")[0]
         )
@@ -110,26 +107,27 @@ def add_family_member(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    # không cho add chính mình
     if payload.email.lower() == user.email.lower():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Không thể thêm chính tài khoản của bạn",
         )
 
-    # tìm user theo email
     member = db.query(User).filter(User.email == payload.email).first()
     if not member:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Không tìm thấy tài khoản với email này",
         )
+
+    # ✅ Tên hiển thị ưu tiên payload.display_name
     display_name = (
         payload.display_name
         or getattr(member, "full_name", None)
         or getattr(member, "name", None)
         or member.email.split("@")[0]
-   )
+    )
+
     # check đã tồn tại link chưa
     exists = (
         db.query(FamilyMember)
@@ -149,12 +147,13 @@ def add_family_member(
             id=exists.id,
             member_id=member.id,
             email=member.email,
+            display_name=display_name,  # ✅ TRẢ VỀ TÊN
             total_income=total_income,
             total_expense=total_expense,
             total_wallet_balance=total_wallet_balance,
         )
 
-    # tạo link mới
+    # tạo link mới (nếu chưa có cột display_name thì tạm thời chỉ lưu owner_id + member_id)
     link = FamilyMember(owner_id=user.id, member_id=member.id)
     db.add(link)
     db.commit()
@@ -169,6 +168,7 @@ def add_family_member(
         id=link.id,
         member_id=member.id,
         email=member.email,
+        display_name=display_name,  # ✅ TRẢ VỀ TÊN
         total_income=total_income,
         total_expense=total_expense,
         total_wallet_balance=total_wallet_balance,
@@ -182,7 +182,6 @@ def member_transactions(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    # chỉ cho xem nếu có link owner->member
     link = (
         db.query(FamilyMember)
         .filter(
@@ -203,7 +202,6 @@ def member_transactions(
         .order_by(Transaction.date.desc())
         .all()
     )
-
     return txs
 
 
@@ -231,5 +229,4 @@ def remove_family_member(
 
     db.delete(link)
     db.commit()
-
     return {"deleted": True}
