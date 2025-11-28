@@ -7,6 +7,7 @@ class TransactionBase(BaseModel):
     amount: float
     note: str | None = None
     category_id: UUID | None = None  # 🔥 sửa lại
+    date: datetime | None = None
 
 class TransactionCreate(TransactionBase):
     pass

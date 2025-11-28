@@ -3,7 +3,7 @@ from fastapi.security import OAuth2PasswordBearer
 from fastapi.openapi.utils import get_openapi
 
 from app.database import Base, engine
-from app.routers import auth, category, wallet, transaction, budget
+from app.routers import auth, category, wallet, transaction, budget, family_member
 
 Base.metadata.create_all(bind=engine)
 
@@ -44,7 +44,7 @@ app.include_router(category.router)
 app.include_router(wallet.router)
 app.include_router(transaction.router)
 app.include_router(budget.router)
-
+app.include_router(family.router)
 @app.get("/")
 def root():
     return {"message": "Money Manager API running!"}

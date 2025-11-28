@@ -3,15 +3,71 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.database import get_db
-from app.services.auth import get_current_user
-from app.models.user import User          # chỉnh lại nếu file khác tên
+from app.models.user import User
 from app.models.transaction import Transaction
-from app.models.family_link import FamilyLink
-from app.schemas.family import FamilyMemberOut, FamilyAddRequest
+from app.models.family_member import FamilyMember
+from app.schemas.family_member import FamilyAddRequest, FamilyMemberOut
+from app.schemas.transaction import TransactionOut
+from app.services.auth import get_current_user
 
 router = APIRouter(prefix="/family", tags=["Family"])
 
 
+# --------- helper: tính tổng thu / chi của 1 user ---------
+def get_user_totals(db: Session, user_id):
+    q = (
+        db.query(
+            Transaction.type,
+            func.coalesce(func.sum(Transaction.amount), 0).label("total"),
+        )
+        .filter(Transaction.user_id == user_id)
+        .group_by(Transaction.type)
+    )
+
+    total_income = 0.0
+    total_expense = 0.0
+
+    for row in q:
+        if row.type == "income":
+            total_income = float(row.total or 0)
+        elif row.type == "expense":
+            total_expense = float(row.total or 0)
+
+    return total_income, total_expense
+
+
+# --------- GET /family  → list các member mà user đang xem ---------
+@router.get("/", response_model=list[FamilyMemberOut])
+def list_family(
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    # lấy record liên kết mà mình là owner
+    links = (
+        db.query(FamilyMember, User)
+        .join(User, FamilyMember.member_id == User.id)
+        .filter(FamilyMember.owner_id == user.id)
+        .all()
+    )
+
+    result: list[FamilyMemberOut] = []
+
+    for link, member in links:
+        total_income, total_expense = get_user_totals(db, member.id)
+        result.append(
+            FamilyMemberOut(
+                id=link.id,
+                member_id=member.id,
+                email=member.email,
+                total_income=total_income,
+                total_expense=total_expense,
+            )
+        )
+
+    return result
+
+
+# --------- POST /family  → thêm 1 tài khoản khác bằng email ---------
 @router.post("/", response_model=FamilyMemberOut)
 def add_family_member(
     payload: FamilyAddRequest,
@@ -19,129 +75,71 @@ def add_family_member(
     user=Depends(get_current_user),
 ):
     # không cho add chính mình
+    if payload.email.lower() == user.email.lower():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Không thể thêm chính tài khoản của bạn",
+        )
+
+    # tìm user theo email
     member = db.query(User).filter(User.email == payload.email).first()
     if not member:
-        raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản với email này")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Không tìm thấy tài khoản với email này",
+        )
 
-    if member.id == user.id:
-        raise HTTPException(status_code=400, detail="Không thể thêm chính bạn vào gia đình")
-
-    # check trùng
-    existing = (
-        db.query(FamilyLink)
-        .filter(FamilyLink.owner_id == user.id, FamilyLink.member_id == member.id)
+    # check đã tồn tại link chưa
+    exists = (
+        db.query(FamilyMember)
+        .filter(
+            FamilyMember.owner_id == user.id,
+            FamilyMember.member_id == member.id,
+        )
         .first()
     )
-    if existing:
-        raise HTTPException(status_code=400, detail="Tài khoản này đã nằm trong danh sách gia đình")
+    if exists:
+        # trả về luôn, k tạo thêm
+        total_income, total_expense = get_user_totals(db, member.id)
+        return FamilyMemberOut(
+            id=exists.id,
+            member_id=member.id,
+            email=member.email,
+            total_income=total_income,
+            total_expense=total_expense,
+        )
 
-    link = FamilyLink(owner_id=user.id, member_id=member.id)
+    # tạo link mới
+    link = FamilyMember(owner_id=user.id, member_id=member.id)
     db.add(link)
     db.commit()
+    db.refresh(link)
 
-    # tổng thu / chi
-    income_sum, expense_sum = (
-        db.query(
-            func.coalesce(
-                func.sum(func.case((Transaction.type == "income", Transaction.amount))), 0
-            ),
-            func.coalesce(
-                func.sum(func.case((Transaction.type == "expense", Transaction.amount))), 0
-            ),
-        )
-        .filter(Transaction.user_id == member.id)
-        .first()
-    )
+    total_income, total_expense = get_user_totals(db, member.id)
 
     return FamilyMemberOut(
+        id=link.id,
         member_id=member.id,
         email=member.email,
-        total_income=float(income_sum or 0),
-        total_expense=float(expense_sum or 0),
+        total_income=total_income,
+        total_expense=total_expense,
     )
 
 
-@router.get("/", response_model=list[FamilyMemberOut])
-def list_family_members(
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user),
-):
-    # lấy list member_id
-    links = (
-        db.query(FamilyLink)
-        .filter(FamilyLink.owner_id == user.id)
-        .all()
-    )
-    if not links:
-        return []
-
-    member_ids = [l.member_id for l in links]
-
-    # lấy info user
-    users = db.query(User).filter(User.id.in_(member_ids)).all()
-    users_by_id = {u.id: u for u in users}
-
-    # tổng thu / chi cho từng member
-    agg = (
-        db.query(
-            Transaction.user_id,
-            func.coalesce(
-                func.sum(
-                    func.case(
-                        (Transaction.type == "income", Transaction.amount),
-                        else_=0,
-                    )
-                ),
-                0,
-            ).label("income"),
-            func.coalesce(
-                func.sum(
-                    func.case(
-                        (Transaction.type == "expense", Transaction.amount),
-                        else_=0,
-                    )
-                ),
-                0,
-            ).label("expense"),
-        )
-        .filter(Transaction.user_id.in_(member_ids))
-        .group_by(Transaction.user_id)
-        .all()
-    )
-    sums_by_user = {row.user_id: row for row in agg}
-
-    out = []
-    for mid in member_ids:
-      u = users_by_id.get(mid)
-      if not u:
-          continue
-      sums = sums_by_user.get(mid)
-      income = float(getattr(sums, "income", 0) or 0)
-      expense = float(getattr(sums, "expense", 0) or 0)
-      out.append(
-          FamilyMemberOut(
-              member_id=mid,
-              email=u.email,
-              total_income=income,
-              total_expense=expense,
-          )
-      )
-    return out
-
-
-@router.get("/{member_id}/transactions")
-def list_member_transactions(
+# --------- GET /family/{member_id}/transactions ---------
+@router.get("/{member_id}/transactions", response_model=list[TransactionOut])
+def member_transactions(
     member_id: str,
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    """
-    Lấy lịch sử thu chi của 1 tài khoản trong gia đình
-    """
-    # verify người này thực sự nằm trong family của user
+    # chỉ cho xem nếu có link owner->member
     link = (
-        db.query(FamilyLink)
-        .filter(FamilyLink.owner_id == user.id, FamilyLink.member_id == member_id)
+        db.query(FamilyMember)
+        .filter(
+            FamilyMember.owner_id == user.id,
+            FamilyMember.member_id == member_id,
+        )
         .first()
     )
     if not link:
@@ -157,5 +155,4 @@ def list_member_transactions(
         .all()
     )
 
-    # trả raw, app đã có logic map category ở AppContext nếu cần
     return txs
