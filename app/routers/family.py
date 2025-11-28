@@ -39,15 +39,24 @@ def get_user_totals(db: Session, user_id: UUID):
     return total_income, total_expense
 
 
-# --------- helper: tính tổng số dư ví của 1 user ---------
-def get_user_wallet_balance(db: Session, user_id: UUID) -> float:
-    total_wallet = (
+# --------- helper: tính SỐ DƯ HIỆN TẠI của ví 1 user ---------
+# Số dư hiện tại = tổng balance ban đầu của các ví + thu - chi
+def get_user_current_wallet_balance(
+    db: Session,
+    user_id: UUID,
+    total_income: float,
+    total_expense: float,
+) -> float:
+    # tổng balance ban đầu (từ bảng wallets)
+    initial_balance = (
         db.query(func.coalesce(func.sum(Wallet.balance), 0.0))
         .filter(Wallet.user_id == user_id)
         .scalar()
         or 0.0
     )
-    return float(total_wallet)
+
+    current_wallet_balance = initial_balance + total_income - total_expense
+    return float(current_wallet_balance)
 
 
 # --------- GET /family  → list các member mà user đang xem ---------
@@ -66,10 +75,14 @@ def list_family(
     result: list[FamilyMemberOut] = []
 
     for link, member in links:
+        # tổng thu / chi của member
         total_income, total_expense = get_user_totals(db, member.id)
-        total_wallet = get_user_wallet_balance(db, member.id)
 
-        # dùng model pydantic để đảm bảo đúng schema
+        # số dư hiện tại (ví ban đầu + thu - chi)
+        total_wallet_balance = get_user_current_wallet_balance(
+            db, member.id, total_income, total_expense
+        )
+
         result.append(
             FamilyMemberOut(
                 id=link.id,
@@ -77,7 +90,7 @@ def list_family(
                 email=member.email,
                 total_income=total_income,
                 total_expense=total_expense,
-                total_wallet_balance=total_wallet,
+                total_wallet_balance=total_wallet_balance,
             )
         )
 
@@ -117,7 +130,9 @@ def add_family_member(
     )
     if exists:
         total_income, total_expense = get_user_totals(db, member.id)
-        total_wallet = get_user_wallet_balance(db, member.id)
+        total_wallet_balance = get_user_current_wallet_balance(
+            db, member.id, total_income, total_expense
+        )
 
         return FamilyMemberOut(
             id=exists.id,
@@ -125,7 +140,7 @@ def add_family_member(
             email=member.email,
             total_income=total_income,
             total_expense=total_expense,
-            total_wallet_balance=total_wallet,
+            total_wallet_balance=total_wallet_balance,
         )
 
     # tạo link mới
@@ -135,7 +150,9 @@ def add_family_member(
     db.refresh(link)
 
     total_income, total_expense = get_user_totals(db, member.id)
-    total_wallet = get_user_wallet_balance(db, member.id)
+    total_wallet_balance = get_user_current_wallet_balance(
+        db, member.id, total_income, total_expense
+    )
 
     return FamilyMemberOut(
         id=link.id,
@@ -143,7 +160,7 @@ def add_family_member(
         email=member.email,
         total_income=total_income,
         total_expense=total_expense,
-        total_wallet_balance=total_wallet,
+        total_wallet_balance=total_wallet_balance,
     )
 
 
