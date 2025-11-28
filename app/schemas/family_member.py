@@ -14,6 +14,7 @@ class FamilyMemberOut(BaseModel):
     email: str
     total_income: float = 0
     total_expense: float = 0
+     total_wallet_balance: float = 0
 
     class Config:
         orm_mode = True

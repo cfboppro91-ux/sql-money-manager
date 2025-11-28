@@ -5,6 +5,7 @@ from sqlalchemy import func
 from app.database import get_db
 from app.models.user import User
 from app.models.transaction import Transaction
+from app.models.wallet import Wallet
 from app.models.family_member import FamilyMember
 from app.schemas.family_member import FamilyAddRequest, FamilyMemberOut
 from app.schemas.transaction import TransactionOut
@@ -116,13 +117,19 @@ def add_family_member(
     db.refresh(link)
 
     total_income, total_expense = get_user_totals(db, member.id)
-
+ total_wallet = (
+        db.query(func.coalesce(func.sum(Wallet.balance), 0.0))
+        .filter(Wallet.user_id == link.member_id)
+        .scalar()
+        or 0.0
+    )
     return FamilyMemberOut(
         id=link.id,
         member_id=member.id,
         email=member.email,
         total_income=total_income,
         total_expense=total_expense,
+        total_wallet_balance=total_wallet_balance,
     )
 
 
