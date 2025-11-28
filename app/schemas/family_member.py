@@ -13,6 +13,7 @@ class FamilyMemberOut(BaseModel):
     id: UUID           # id record family_members
     member_id: UUID    # id của user được xem
     email: str
+    display_name: str
     total_income: float = 0
     total_expense: float = 0
     total_wallet_balance: float = 0
