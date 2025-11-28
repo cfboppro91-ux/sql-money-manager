@@ -3,7 +3,7 @@ from fastapi.security import OAuth2PasswordBearer
 from fastapi.openapi.utils import get_openapi
 
 from app.database import Base, engine
-from app.routers import auth, category, wallet, transaction, budget, family_member
+from app.routers import auth, category, wallet, transaction, budget, family
 
 Base.metadata.create_all(bind=engine)
 
