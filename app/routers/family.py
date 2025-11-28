@@ -9,7 +9,7 @@ from app.models.user import User
 from app.models.transaction import Transaction
 from app.models.wallet import Wallet
 from app.models.family_member import FamilyMember
-from app.schemas.family_member import FamilyAddRequest, FamilyMemberOut
+from app.schemas.family_member import FamilyAddRequest, FamilyMemberOut, FamilyInvitationOut
 from app.schemas.transaction import TransactionOut
 from app.services.auth import get_current_user
 
