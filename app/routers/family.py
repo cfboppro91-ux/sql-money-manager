@@ -1,6 +1,8 @@
+# app/routers/family.py
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from uuid import UUID
 
 from app.database import get_db
 from app.models.user import User
@@ -15,7 +17,7 @@ router = APIRouter(prefix="/family", tags=["Family"])
 
 
 # --------- helper: tính tổng thu / chi của 1 user ---------
-def get_user_totals(db: Session, user_id):
+def get_user_totals(db: Session, user_id: UUID):
     q = (
         db.query(
             Transaction.type,
@@ -37,13 +39,23 @@ def get_user_totals(db: Session, user_id):
     return total_income, total_expense
 
 
+# --------- helper: tính tổng số dư ví của 1 user ---------
+def get_user_wallet_balance(db: Session, user_id: UUID) -> float:
+    total_wallet = (
+        db.query(func.coalesce(func.sum(Wallet.balance), 0.0))
+        .filter(Wallet.user_id == user_id)
+        .scalar()
+        or 0.0
+    )
+    return float(total_wallet)
+
+
 # --------- GET /family  → list các member mà user đang xem ---------
 @router.get("/", response_model=list[FamilyMemberOut])
 def list_family(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    # lấy record liên kết mà mình là owner
     links = (
         db.query(FamilyMember, User)
         .join(User, FamilyMember.member_id == User.id)
@@ -55,6 +67,9 @@ def list_family(
 
     for link, member in links:
         total_income, total_expense = get_user_totals(db, member.id)
+        total_wallet = get_user_wallet_balance(db, member.id)
+
+        # dùng model pydantic để đảm bảo đúng schema
         result.append(
             FamilyMemberOut(
                 id=link.id,
@@ -62,6 +77,7 @@ def list_family(
                 email=member.email,
                 total_income=total_income,
                 total_expense=total_expense,
+                total_wallet_balance=total_wallet,
             )
         )
 
@@ -100,14 +116,16 @@ def add_family_member(
         .first()
     )
     if exists:
-        # trả về luôn, k tạo thêm
         total_income, total_expense = get_user_totals(db, member.id)
+        total_wallet = get_user_wallet_balance(db, member.id)
+
         return FamilyMemberOut(
             id=exists.id,
             member_id=member.id,
             email=member.email,
             total_income=total_income,
             total_expense=total_expense,
+            total_wallet_balance=total_wallet,
         )
 
     # tạo link mới
@@ -117,26 +135,22 @@ def add_family_member(
     db.refresh(link)
 
     total_income, total_expense = get_user_totals(db, member.id)
- total_wallet = (
-        db.query(func.coalesce(func.sum(Wallet.balance), 0.0))
-        .filter(Wallet.user_id == link.member_id)
-        .scalar()
-        or 0.0
-    )
+    total_wallet = get_user_wallet_balance(db, member.id)
+
     return FamilyMemberOut(
         id=link.id,
         member_id=member.id,
         email=member.email,
         total_income=total_income,
         total_expense=total_expense,
-        total_wallet_balance=total_wallet_balance,
+        total_wallet_balance=total_wallet,
     )
 
 
 # --------- GET /family/{member_id}/transactions ---------
 @router.get("/{member_id}/transactions", response_model=list[TransactionOut])
 def member_transactions(
-    member_id: str,
+    member_id: UUID,
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
@@ -163,3 +177,31 @@ def member_transactions(
     )
 
     return txs
+
+
+# --------- DELETE /family/{member_id} → xoá khỏi gia đình ---------
+@router.delete("/{member_id}")
+def remove_family_member(
+    member_id: UUID,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    link = (
+        db.query(FamilyMember)
+        .filter(
+            FamilyMember.owner_id == user.id,
+            FamilyMember.member_id == member_id,
+        )
+        .first()
+    )
+
+    if not link:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Thành viên không tồn tại trong gia đình",
+        )
+
+    db.delete(link)
+    db.commit()
+
+    return {"deleted": True}
