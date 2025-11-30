@@ -45,7 +45,7 @@ def get_user_totals(db: Session, user_id: UUID):
     return total_income, total_expense
 
 
-# --------- helper: tính SỐ DƯ HIỆN TẠI của ví 1 user ---------
+# --------- helper: tính số dư hiện tại của ví user ---------
 def get_user_current_wallet_balance(
     db: Session,
     user_id: UUID,
@@ -62,7 +62,7 @@ def get_user_current_wallet_balance(
     return float(current_wallet_balance)
 
 
-# --------- GET /family  → list các member mình đang là owner ---------
+# --------- GET /family ---------
 @router.get("/", response_model=list[FamilyMemberOut])
 def list_family(
     db: Session = Depends(get_db),
@@ -78,12 +78,10 @@ def list_family(
     result: list[FamilyMemberOut] = []
 
     for link, member in links:
-        # mặc định = 0 hết
         total_income = 0.0
         total_expense = 0.0
         total_wallet_balance = 0.0
 
-        # chỉ tính nếu đã accepted
         if link.status == "accepted":
             total_income, total_expense = get_user_totals(db, member.id)
             total_wallet_balance = get_user_current_wallet_balance(
@@ -91,7 +89,7 @@ def list_family(
             )
 
         display_name = (
-            getattr(link, "display_name", None)  # nếu có cột display_name trong bảng
+            getattr(link, "display_name", None)
             or getattr(member, "full_name", None)
             or getattr(member, "name", None)
             or member.email.split("@")[0]
@@ -113,14 +111,14 @@ def list_family(
     return result
 
 
-# --------- POST /family  → gửi lời mời ---------
+# --------- POST /family → gửi lời mời ---------
 @router.post("/", response_model=FamilyMemberOut)
 def add_family_member(
     payload: FamilyAddRequest,
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    # không cho add chính mình
+    # không cho tự add chính mình
     if payload.email.lower() == user.email.lower():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -142,7 +140,7 @@ def add_family_member(
         or member.email.split("@")[0]
     )
 
-    # check đã tồn tại link chưa
+    # check tồn tại link chưa
     link = (
         db.query(FamilyMember)
         .filter(
@@ -153,9 +151,6 @@ def add_family_member(
     )
 
     if link:
-        # nếu đã tồn tại:
-        #  - accepted: có số liệu
-        #  - pending / rejected: 0 hết
         total_income = 0.0
         total_expense = 0.0
         total_wallet_balance = 0.0
@@ -177,27 +172,26 @@ def add_family_member(
             status=link.status,
         )
 
-    # tạo link mới → luôn là pending
+    # tạo link mới
     link = FamilyMember(
         owner_id=user.id,
         member_id=member.id,
         status="pending",
-        # nếu bảng family_members có cột display_name thì thêm:
-        # display_name=display_name,
     )
     db.add(link)
     db.commit()
     db.refresh(link)
-        if getattr(member, "fcm_token", None):
-            owner_name = user.email.split("@")[0]
-            send_notification_to_token(
-                member.fcm_token,
-                title="Lời mời tham gia nhóm",
-                body=f"{owner_name} vừa mời bạn vào nhóm chi tiêu",
-                data={"type": "family_invite"},
+
+    # gửi thông báo nếu có token
+    if getattr(member, "fcm_token", None):
+        owner_name = user.email.split("@")[0]
+        send_notification_to_token(
+            member.fcm_token,
+            title="Lời mời tham gia nhóm",
+            body=f"{owner_name} vừa mời bạn vào nhóm chi tiêu",
+            data={"type": "family_invite"},
         )
 
-    # pending → chưa show số liệu
     return FamilyMemberOut(
         id=link.id,
         member_id=member.id,
@@ -206,11 +200,11 @@ def add_family_member(
         total_income=0.0,
         total_expense=0.0,
         total_wallet_balance=0.0,
-        status=link.status,  # "pending"
+        status=link.status,
     )
 
 
-# --------- GET /family/invitations  → các lời mời mình được add ---------
+# --------- GET /family/invitations ---------
 @router.get("/invitations", response_model=list[FamilyInvitationOut])
 def my_invitations(
     db: Session = Depends(get_db),
@@ -248,7 +242,7 @@ def my_invitations(
     return result
 
 
-# --------- POST /family/{link_id}/accept  → member chấp nhận ---------
+# --------- POST /family/{link_id}/accept ---------
 @router.post("/{link_id}/accept")
 def accept_family_invitation(
     link_id: UUID,
@@ -265,7 +259,9 @@ def accept_family_invitation(
     link.status = "accepted"
     db.commit()
     db.refresh(link)
+
     owner = db.query(User).filter(User.id == link.owner_id).first()
+
     if owner and owner.fcm_token:
         member_name = user.email.split("@")[0]
         send_notification_to_token(
@@ -274,10 +270,11 @@ def accept_family_invitation(
             body=f"{member_name} đã đồng ý tham gia nhóm của bạn",
             data={"type": "family_invite_accepted"},
         )
+
     return {"status": "accepted"}
 
 
-# --------- POST /family/{link_id}/reject  → member từ chối ---------
+# --------- POST /family/{link_id}/reject ---------
 @router.post("/{link_id}/reject")
 def reject_family_invitation(
     link_id: UUID,
@@ -303,7 +300,6 @@ def member_transactions(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    # chỉ xem nếu có link + đã accepted
     link = (
         db.query(FamilyMember)
         .filter(
@@ -312,6 +308,7 @@ def member_transactions(
         )
         .first()
     )
+
     if not link or link.status != "accepted":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -324,10 +321,11 @@ def member_transactions(
         .order_by(Transaction.date.desc())
         .all()
     )
+
     return txs
 
 
-# --------- DELETE /family/{member_id} → xoá khỏi gia đình ---------
+# --------- DELETE /family/{member_id} ---------
 @router.delete("/{member_id}")
 def remove_family_member(
     member_id: UUID,
