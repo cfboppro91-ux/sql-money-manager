@@ -191,6 +191,7 @@ def add_family_member(
             body=f"{owner_name} vừa mời bạn vào nhóm chi tiêu",
             data={"type": "family_invite"},
         )
+    print("👉 member email:", member.email, "fcm_token:", member.fcm_token)
 
     return FamilyMemberOut(
         id=link.id,
@@ -202,8 +203,6 @@ def add_family_member(
         total_wallet_balance=0.0,
         status=link.status,
     )
-print("👉 member email:", member.email, "fcm_token:", member.fcm_token)
-
 
 # --------- GET /family/invitations ---------
 @router.get("/invitations", response_model=list[FamilyInvitationOut])
