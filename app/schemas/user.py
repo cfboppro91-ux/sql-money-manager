@@ -12,6 +12,7 @@ class UserCreate(BaseModel):
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+    fcm_token: Optional[str] = None 
 
 
 class UserOut(BaseModel):

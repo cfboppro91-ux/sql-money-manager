@@ -5,6 +5,8 @@ from sqlalchemy import func
 from uuid import UUID
 
 from app.database import get_db
+from app.notifications import send_notification_to_token
+from firebase_admin import messaging
 from app.models.user import User
 from app.models.transaction import Transaction
 from app.models.wallet import Wallet
@@ -186,6 +188,14 @@ def add_family_member(
     db.add(link)
     db.commit()
     db.refresh(link)
+   if getattr(member, "fcm_token", None):
+        owner_name = user.email.split("@")[0]
+        send_notification_to_token(
+            member.fcm_token,
+            title="Lời mời tham gia nhóm",
+            body=f"{owner_name} vừa mời bạn vào nhóm chi tiêu",
+            data={"type": "family_invite"},
+        )
 
     # pending → chưa show số liệu
     return FamilyMemberOut(
@@ -255,6 +265,15 @@ def accept_family_invitation(
     link.status = "accepted"
     db.commit()
     db.refresh(link)
+     owner = db.query(User).filter(User.id == link.owner_id).first()
+    if owner and owner.fcm_token:
+        member_name = user.email.split("@")[0]
+        send_notification_to_token(
+            owner.fcm_token,
+            title="Lời mời đã được chấp nhận",
+            body=f"{member_name} đã đồng ý tham gia nhóm của bạn",
+            data={"type": "family_invite_accepted"},
+        )
     return {"status": "accepted"}
 
 

@@ -4,6 +4,12 @@ from fastapi.openapi.utils import get_openapi
 
 from app.database import Base, engine
 from app.routers import auth, category, wallet, transaction, budget, family
+import firebase_admin
+from firebase_admin import credentials
+
+cred = credentials.Certificate("/etc/secrets/firebase-admin-key.json")
+firebase_admin.initialize_app(cred)
+
 
 Base.metadata.create_all(bind=engine)
 
