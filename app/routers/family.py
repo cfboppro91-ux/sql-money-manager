@@ -188,13 +188,13 @@ def add_family_member(
     db.add(link)
     db.commit()
     db.refresh(link)
-   if getattr(member, "fcm_token", None):
-        owner_name = user.email.split("@")[0]
-        send_notification_to_token(
-            member.fcm_token,
-            title="Lời mời tham gia nhóm",
-            body=f"{owner_name} vừa mời bạn vào nhóm chi tiêu",
-            data={"type": "family_invite"},
+        if getattr(member, "fcm_token", None):
+            owner_name = user.email.split("@")[0]
+            send_notification_to_token(
+                member.fcm_token,
+                title="Lời mời tham gia nhóm",
+                body=f"{owner_name} vừa mời bạn vào nhóm chi tiêu",
+                data={"type": "family_invite"},
         )
 
     # pending → chưa show số liệu
@@ -265,7 +265,7 @@ def accept_family_invitation(
     link.status = "accepted"
     db.commit()
     db.refresh(link)
-     owner = db.query(User).filter(User.id == link.owner_id).first()
+    owner = db.query(User).filter(User.id == link.owner_id).first()
     if owner and owner.fcm_token:
         member_name = user.email.split("@")[0]
         send_notification_to_token(
