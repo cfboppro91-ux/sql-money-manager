@@ -1,6 +1,6 @@
 # app/schemas/user.py
 from uuid import UUID
-
+from typing import Optional
 from pydantic import BaseModel, EmailStr, ConfigDict
 
 
