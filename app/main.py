@@ -1,15 +1,28 @@
+# app/main.py
 from fastapi import FastAPI
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.openapi.utils import get_openapi
 
 from app.database import Base, engine
 from app.routers import auth, category, wallet, transaction, budget, family
+
 import firebase_admin
 from firebase_admin import credentials
+import os, json
 
-cred = credentials.Certificate("/etc/secrets/firebase-admin-key.json")
-firebase_admin.initialize_app(cred)
+# ✅ Init Firebase Admin TẠI ĐÂY và CHỈ ở đây
 
+if not firebase_admin._apps:
+    # ưu tiên dùng env JSON nếu có
+    raw = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
+    if raw:
+        cred_info = json.loads(raw)
+        cred = credentials.Certificate(cred_info)
+    else:
+        # fallback dùng secret file (Render)
+        cred = credentials.Certificate("/etc/secrets/firebase-admin-key.json")
+
+    firebase_admin.initialize_app(cred)
 
 Base.metadata.create_all(bind=engine)
 
@@ -51,6 +64,7 @@ app.include_router(wallet.router)
 app.include_router(transaction.router)
 app.include_router(budget.router)
 app.include_router(family.router)
+
 @app.get("/")
 def root():
     return {"message": "Money Manager API running!"}

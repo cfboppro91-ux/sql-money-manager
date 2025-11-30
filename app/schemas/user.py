@@ -1,8 +1,7 @@
 # app/schemas/user.py
-from uuid import UUID
+from pydantic import BaseModel, EmailStr
 from typing import Optional
-from pydantic import BaseModel, EmailStr, ConfigDict
-
+from uuid import UUID
 
 class UserCreate(BaseModel):
     email: EmailStr
@@ -12,12 +11,15 @@ class UserCreate(BaseModel):
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
-    fcm_token: Optional[str] = None 
 
 
 class UserOut(BaseModel):
-    id: UUID            # trước là str
+    id: UUID
     email: EmailStr
 
-    # thay cho orm_mode = True trong Pydantic v1
-    model_config = ConfigDict(from_attributes=True)
+    class Config:
+        orm_mode = True
+
+
+class FCMTokenIn(BaseModel):
+    fcm_token: str

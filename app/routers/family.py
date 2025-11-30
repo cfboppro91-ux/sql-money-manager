@@ -202,6 +202,7 @@ def add_family_member(
         total_wallet_balance=0.0,
         status=link.status,
     )
+print("👉 member email:", member.email, "fcm_token:", member.fcm_token)
 
 
 # --------- GET /family/invitations ---------
