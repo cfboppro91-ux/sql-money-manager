@@ -24,6 +24,10 @@ def login(data: UserLogin, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == data.email).first()
     if not user or not verify_password(data.password, user.password):
         raise HTTPException(400, "Sai email hoặc mật khẩu")
+    if data.fcm_token:
+        user.fcm_token = data.fcm_token
+        db.commit()
+        db.refresh(user)
 
     token = create_access_token({"sub": str(user.id)})
 
@@ -32,3 +36,4 @@ def login(data: UserLogin, db: Session = Depends(get_db)):
         "token_type": "bearer",
         "user": {"id": str(user.id), "email": user.email}
     }
+
