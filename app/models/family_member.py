@@ -14,7 +14,7 @@ class FamilyMember(Base):
     owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     member_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     group_name = Column(String, nullable=True)
-
+    display_name = Column(String, nullable=True)
     # trạng thái: pending / accepted / rejected
     status = Column(String, nullable=False, server_default="pending")
 
