@@ -4,7 +4,7 @@ from fastapi.security import OAuth2PasswordBearer
 from fastapi.openapi.utils import get_openapi
 
 from app.database import Base, engine
-from app.routers import auth, category, wallet, transaction, budget, family
+from app.routers import auth, category, wallet, transaction, budget, family, bank
 
 import firebase_admin
 from firebase_admin import credentials
@@ -64,6 +64,7 @@ app.include_router(wallet.router)
 app.include_router(transaction.router)
 app.include_router(budget.router)
 app.include_router(family.router)
+app.include_router(bank.router)
 
 @app.get("/")
 def root():
