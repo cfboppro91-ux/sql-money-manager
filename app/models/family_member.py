@@ -15,7 +15,7 @@ class FamilyMember(Base):
     member_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     group_name = Column(String, nullable=True)
 
-    # ✅ trạng thái: pending / accepted / rejected
+    # trạng thái: pending / accepted / rejected
     status = Column(String, nullable=False, server_default="pending")
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
