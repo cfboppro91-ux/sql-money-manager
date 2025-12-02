@@ -8,6 +8,9 @@ from app.database import get_db
 from app.services.auth import get_current_user
 from app.models.bank_account import BankAccount
 from app.models.bank_transaction import BankTransaction
+from app.models.family_member import FamilyMember
+from app.models.user import User
+from app.notifications import send_notification_to_token
 from app.schemas.bank import (
     BankAccountCreate,
     BankAccountOut,
@@ -112,14 +115,15 @@ def create_bank_transaction(
             detail="Tài khoản ngân hàng không tồn tại",
         )
 
-    # cập nhật số dư
+    # validate type
     if payload.type not in ("income", "expense"):
         raise HTTPException(400, "type phải là 'income' hoặc 'expense'")
 
+    # cập nhật số dư
     if payload.type == "income":
-        acc.balance += payload.amount
+        acc.balance = (acc.balance or 0) + payload.amount
     else:
-        acc.balance -= payload.amount
+        acc.balance = (acc.balance or 0) - payload.amount
 
     tx = BankTransaction(
         account_id=account_id,
@@ -133,4 +137,36 @@ def create_bank_transaction(
     db.add(tx)
     db.commit()
     db.refresh(tx)
+    db.refresh(acc)
+
+    # 🔔 GỬI FCM CHO CÁC OWNER ĐANG THEO DÕI USER NÀY
+    # user hiện tại = member, tìm các owner có gia đình với user này
+    links = (
+        db.query(FamilyMember, User)
+        .join(User, FamilyMember.owner_id == User.id)
+        .filter(
+            FamilyMember.member_id == user.id,
+            FamilyMember.status == "accepted",
+        )
+        .all()
+    )
+
+    member_name = user.email.split("@")[0]
+    action_word = "nhận" if tx.type == "income" else "chi"
+    amount_str = f"{int(tx.amount):,}đ".replace(",", ".")
+
+    for link, owner in links:
+        if getattr(owner, "fcm_token", None):
+            send_notification_to_token(
+                owner.fcm_token,
+                title="Giao dịch ngân hàng mới",
+                body=f"{member_name} vừa {action_word} {amount_str} qua ngân hàng",
+                data={
+                    "type": "bank_tx_changed",
+                    "member_id": str(user.id),
+                    "account_id": str(acc.id),
+                    "tx_id": str(tx.id),
+                },
+            )
+
     return tx
