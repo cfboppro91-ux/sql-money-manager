@@ -113,25 +113,30 @@ def list_family(
     return result
 
 
-# --------- POST /family → gửi lời mời ---------
+# --------- POST /family → gửi lời mời (theo nhóm) ---------
 @router.post("/", response_model=FamilyMemberOut)
 def add_family_member(
     payload: FamilyAddRequest,
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    # không cho tự add chính mình
     if payload.email.lower() == user.email.lower():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Không thể thêm chính tài khoản của bạn",
         )
 
+    # tìm user theo email
     member = db.query(User).filter(User.email == payload.email).first()
     if not member:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Không tìm thấy tài khoản với email này",
         )
+
+    # tên nhóm: nếu không gửi thì mặc định "Gia đình"
+    group_name = (payload.group_name or "Gia đình").strip()
 
     display_name = (
         payload.display_name
@@ -140,26 +145,18 @@ def add_family_member(
         or member.email.split("@")[0]
     )
 
-    # 👉 nếu không truyền thì default theo owner
-    group_name = payload.group_name or f"Nhóm của {user.email.split('@')[0]}"
-
-    # check tồn tại link chưa
+    # ⚠️ check trùng link THEO NHÓM
     link = (
         db.query(FamilyMember)
         .filter(
             FamilyMember.owner_id == user.id,
             FamilyMember.member_id == member.id,
+            FamilyMember.group_name == group_name,   # 👈 thêm
         )
         .first()
     )
 
     if link:
-        # nếu đã có link rồi thì có thể update group_name nếu gửi mới
-        if payload.group_name:
-            link.group_name = group_name
-            db.commit()
-            db.refresh(link)
-
         total_income = 0.0
         total_expense = 0.0
         total_wallet_balance = 0.0
@@ -179,7 +176,7 @@ def add_family_member(
             total_expense=total_expense,
             total_wallet_balance=total_wallet_balance,
             status=link.status,
-            group_name=link.group_name,  # 👈
+            group_name=link.group_name,   # 👈 nhớ trả luôn
         )
 
     # tạo link mới
@@ -187,8 +184,7 @@ def add_family_member(
         owner_id=user.id,
         member_id=member.id,
         status="pending",
-        display_name=display_name,
-        group_name=group_name,   # 👈
+        group_name=group_name,  # 👈 gắn nhóm
     )
     db.add(link)
     db.commit()
@@ -200,9 +196,10 @@ def add_family_member(
         send_notification_to_token(
             member.fcm_token,
             title="Lời mời tham gia nhóm",
-            body=f"{owner_name} vừa mời bạn vào nhóm chi tiêu: {group_name}",
+            body=f"{owner_name} vừa mời bạn vào nhóm chi tiêu '{group_name}'",
             data={"type": "family_invite"},
         )
+
     print("👉 member email:", member.email, "fcm_token:", member.fcm_token)
 
     return FamilyMemberOut(
@@ -214,8 +211,9 @@ def add_family_member(
         total_expense=0.0,
         total_wallet_balance=0.0,
         status=link.status,
-        group_name=link.group_name,  # 👈
+        group_name=link.group_name,
     )
+
 
 # --------- GET /family/invitations ---------
 @router.get("/invitations", response_model=list[FamilyInvitationOut])
