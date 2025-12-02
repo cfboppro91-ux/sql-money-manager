@@ -8,6 +8,7 @@ from typing import Optional
 class FamilyAddRequest(BaseModel):
     email: EmailStr
     display_name: str | None = None
+    group_name: Optional[str] = None
 
 
 class FamilyMemberOut(BaseModel):
@@ -19,6 +20,7 @@ class FamilyMemberOut(BaseModel):
     total_expense: float = 0
     total_wallet_balance: float = 0
     status: str = "accepted"   # ✅ thêm
+    group_name: Optional[str] = None
 
     class Config:
         orm_mode = True
@@ -30,6 +32,18 @@ class FamilyInvitationOut(BaseModel):
     owner_id: UUID        # user đã mời mình
     owner_email: str
     owner_display_name: str | None = None
+    status: str
+    created_at: datetime
+
+    class Config:
+        orm_mode = True
+
+class FamilyJoinedOut(BaseModel):
+    id: UUID                  # id của link (family_member.id)
+    owner_id: UUID
+    owner_email: str
+    owner_display_name: str
+    group_name: Optional[str] = None
     status: str
     created_at: datetime
 

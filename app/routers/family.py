@@ -15,6 +15,7 @@ from app.schemas.family_member import (
     FamilyAddRequest,
     FamilyMemberOut,
     FamilyInvitationOut,
+    FamilyJoinedOut,
 )
 from app.schemas.transaction import TransactionOut
 from app.services.auth import get_current_user
@@ -105,6 +106,7 @@ def list_family(
                 total_expense=total_expense,
                 total_wallet_balance=total_wallet_balance,
                 status=link.status,
+                group_name=getattr(link, "group_name", None)
             )
         )
 
@@ -118,14 +120,12 @@ def add_family_member(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    # không cho tự add chính mình
     if payload.email.lower() == user.email.lower():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Không thể thêm chính tài khoản của bạn",
         )
 
-    # tìm user theo email
     member = db.query(User).filter(User.email == payload.email).first()
     if not member:
         raise HTTPException(
@@ -140,6 +140,9 @@ def add_family_member(
         or member.email.split("@")[0]
     )
 
+    # 👉 nếu không truyền thì default theo owner
+    group_name = payload.group_name or f"Nhóm của {user.email.split('@')[0]}"
+
     # check tồn tại link chưa
     link = (
         db.query(FamilyMember)
@@ -151,6 +154,12 @@ def add_family_member(
     )
 
     if link:
+        # nếu đã có link rồi thì có thể update group_name nếu gửi mới
+        if payload.group_name:
+            link.group_name = group_name
+            db.commit()
+            db.refresh(link)
+
         total_income = 0.0
         total_expense = 0.0
         total_wallet_balance = 0.0
@@ -170,6 +179,7 @@ def add_family_member(
             total_expense=total_expense,
             total_wallet_balance=total_wallet_balance,
             status=link.status,
+            group_name=link.group_name,  # 👈
         )
 
     # tạo link mới
@@ -177,6 +187,8 @@ def add_family_member(
         owner_id=user.id,
         member_id=member.id,
         status="pending",
+        display_name=display_name,
+        group_name=group_name,   # 👈
     )
     db.add(link)
     db.commit()
@@ -188,7 +200,7 @@ def add_family_member(
         send_notification_to_token(
             member.fcm_token,
             title="Lời mời tham gia nhóm",
-            body=f"{owner_name} vừa mời bạn vào nhóm chi tiêu",
+            body=f"{owner_name} vừa mời bạn vào nhóm chi tiêu: {group_name}",
             data={"type": "family_invite"},
         )
     print("👉 member email:", member.email, "fcm_token:", member.fcm_token)
@@ -202,6 +214,7 @@ def add_family_member(
         total_expense=0.0,
         total_wallet_balance=0.0,
         status=link.status,
+        group_name=link.group_name,  # 👈
     )
 
 # --------- GET /family/invitations ---------
@@ -350,3 +363,68 @@ def remove_family_member(
     db.delete(link)
     db.commit()
     return {"deleted": True}
+
+@router.get("/joined", response_model=list[FamilyJoinedOut])
+def my_joined_groups(
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    links = (
+        db.query(FamilyMember, User)
+        .join(User, FamilyMember.owner_id == User.id)
+        .filter(
+            FamilyMember.member_id == user.id,
+            FamilyMember.status == "accepted",
+        )
+        .order_by(FamilyMember.created_at.asc())
+        .all()
+    )
+
+    result: list[FamilyJoinedOut] = []
+
+    for link, owner in links:
+        owner_display_name = (
+            getattr(owner, "full_name", None)
+            or getattr(owner, "name", None)
+            or owner.email.split("@")[0]
+        )
+
+        result.append(
+            FamilyJoinedOut(
+                id=link.id,
+                owner_id=owner.id,
+                owner_email=owner.email,
+                owner_display_name=owner_display_name,
+                group_name=link.group_name,
+                status=link.status,
+                created_at=link.created_at,
+            )
+        )
+
+    return result
+
+@router.post("/{link_id}/leave")
+def leave_family_group(
+    link_id: UUID,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    link = (
+        db.query(FamilyMember)
+        .filter(
+            FamilyMember.id == link_id,
+            FamilyMember.member_id == user.id,
+            FamilyMember.status == "accepted",
+        )
+        .first()
+    )
+
+    if not link:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Bạn không còn ở nhóm này hoặc nhóm không tồn tại",
+        )
+
+    db.delete(link)
+    db.commit()
+    return {"left": True}    
