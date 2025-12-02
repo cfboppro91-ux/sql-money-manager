@@ -2,30 +2,43 @@
 from pydantic import BaseModel
 from uuid import UUID
 from datetime import datetime
-from typing import List
-
-class BankTransactionOut(BaseModel):
-    id: UUID
-    type: str
-    amount: float
-    description: str | None = None
-    date: datetime
-
-    class Config:
-        from_attributes = True  # pydantic v2
+from typing import Optional
 
 
-class BankAccountOut(BaseModel):
-    id: UUID
+# --------- BANK ACCOUNT ---------
+class BankAccountBase(BaseModel):
     bank_name: str
     account_number: str
-    balance: float
+    balance: float = 0.0
+
+
+class BankAccountCreate(BankAccountBase):
+    pass
+
+
+class BankAccountOut(BankAccountBase):
+    id: UUID
 
     class Config:
-        from_attributes = True
+        orm_mode = True
 
 
-class SimulateTxIn(BaseModel):
-    type: str   # "income" / "expense"
+# --------- BANK TRANSACTION ---------
+class BankTransactionBase(BaseModel):
+    type: str           # 'income' hoặc 'expense'
     amount: float
-    description: str | None = None
+    description: Optional[str] = None
+    date: Optional[datetime] = None
+
+
+class BankTransactionCreate(BankTransactionBase):
+    pass
+
+
+class BankTransactionOut(BankTransactionBase):
+    id: UUID
+    account_id: UUID
+    balance_after: Optional[float] = None
+
+    class Config:
+        orm_mode = True

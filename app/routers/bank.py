@@ -1,39 +1,81 @@
 # app/routers/bank.py
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from uuid import UUID
+from datetime import datetime
 
 from app.database import get_db
+from app.services.auth import get_current_user
 from app.models.bank_account import BankAccount
 from app.models.bank_transaction import BankTransaction
-from app.schemas.bank import BankAccountOut, BankTransactionOut, SimulateTxIn
-from app.services.auth import get_current_user
+from app.schemas.bank import (
+    BankAccountCreate,
+    BankAccountOut,
+    BankTransactionCreate,
+    BankTransactionOut,
+)
 
 router = APIRouter(prefix="/bank", tags=["Bank"])
 
 
+# --------- GET /bank/accounts  → list account ngân hàng của user ---------
 @router.get("/accounts", response_model=list[BankAccountOut])
 def list_bank_accounts(
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user=Depends(get_current_user),
 ):
-    accounts = db.query(BankAccount).filter(BankAccount.user_id == user.id).all()
+    accounts = (
+        db.query(BankAccount)
+        .filter(BankAccount.user_id == user.id)
+        .order_by(BankAccount.created_at.asc())
+        .all()
+    )
     return accounts
 
 
-@router.get("/accounts/{account_id}/transactions", response_model=list[BankTransactionOut])
+# --------- POST /bank/accounts  → tạo 1 account ngân hàng ---------
+@router.post("/accounts", response_model=BankAccountOut, status_code=status.HTTP_201_CREATED)
+def create_bank_account(
+    payload: BankAccountCreate,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    acc = BankAccount(
+        user_id=user.id,
+        bank_name=payload.bank_name,
+        account_number=payload.account_number,
+        balance=payload.balance,
+    )
+    db.add(acc)
+    db.commit()
+    db.refresh(acc)
+    return acc
+
+
+# --------- GET /bank/accounts/{account_id}/transactions  → history ---------
+@router.get(
+    "/accounts/{account_id}/transactions",
+    response_model=list[BankTransactionOut],
+)
 def list_bank_transactions(
     account_id: UUID,
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user=Depends(get_current_user),
 ):
-    account = (
+    # check quyền sở hữu acc
+    acc = (
         db.query(BankAccount)
-        .filter(BankAccount.id == account_id, BankAccount.user_id == user.id)
+        .filter(
+            BankAccount.id == account_id,
+            BankAccount.user_id == user.id,
+        )
         .first()
     )
-    if not account:
-        raise HTTPException(404, "Không tìm thấy tài khoản ngân hàng")
+    if not acc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tài khoản ngân hàng không tồn tại",
+        )
 
     txs = (
         db.query(BankTransaction)
@@ -44,51 +86,51 @@ def list_bank_transactions(
     return txs
 
 
-# fake ngân hàng: tạo giao dịch & cập nhật balance
-@router.post("/accounts/{account_id}/simulate-tx", response_model=BankTransactionOut)
-def simulate_bank_tx(
+# --------- POST /bank/accounts/{account_id}/transactions  → tạo giao dịch ---------
+@router.post(
+    "/accounts/{account_id}/transactions",
+    response_model=BankTransactionOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_bank_transaction(
     account_id: UUID,
-    payload: SimulateTxIn,
+    payload: BankTransactionCreate,
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user=Depends(get_current_user),
 ):
-    account = (
+    acc = (
         db.query(BankAccount)
-        .filter(BankAccount.id == account_id, BankAccount.user_id == user.id)
+        .filter(
+            BankAccount.id == account_id,
+            BankAccount.user_id == user.id,
+        )
         .first()
     )
-    if not account:
-        raise HTTPException(404, "Không tìm thấy tài khoản ngân hàng")
+    if not acc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tài khoản ngân hàng không tồn tại",
+        )
 
+    # cập nhật số dư
     if payload.type not in ("income", "expense"):
-        raise HTTPException(400, "type phải là income hoặc expense")
+        raise HTTPException(400, "type phải là 'income' hoặc 'expense'")
 
-    amount = float(payload.amount or 0)
-    if amount <= 0:
-        raise HTTPException(400, "amount phải > 0")
-
-    # update số dư
     if payload.type == "income":
-      account.balance += amount
+        acc.balance += payload.amount
     else:
-      account.balance -= amount
+        acc.balance -= payload.amount
 
     tx = BankTransaction(
-        account_id=account.id,
+        account_id=account_id,
         type=payload.type,
-        amount=amount,
+        amount=payload.amount,
         description=payload.description,
+        date=payload.date or datetime.utcnow(),
+        balance_after=acc.balance,
     )
 
     db.add(tx)
     db.commit()
     db.refresh(tx)
-    db.refresh(account)
-
-    # OPTIONAL: gửi FCM notif cho owner (giống flow family)
-    # => có thể dùng send_notification_to_token + user.fcm_token
-    # title = "Giao dịch ngân hàng mới"
-    # body = f"{payload.type == 'income' and '+' or '-'}{int(amount)} vào {account.bank_name}"
-    # send_notification_to_token(...)
-
     return tx
