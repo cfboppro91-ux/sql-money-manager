@@ -1,7 +1,7 @@
 # app/routers/transaction.py
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-
+from datetime import datetime
 from app.database import get_db
 from app.models.transaction import Transaction
 from app.models.user import User
@@ -114,18 +114,31 @@ def delete_tx(
     return {"deleted": True}
 
 @router.put("/{tx_id}", response_model=TransactionOut)
-def update_tx(data: TransactionCreate, tx_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    tx = db.query(Transaction).filter(Transaction.id == tx_id, Transaction.user_id == user.id).first()
+def update_tx(
+    tx_id: str,
+    data: TransactionCreate,
+    db: Session = Depends(get_db),
+    user = Depends(get_current_user)
+):
+    tx = (
+        db.query(Transaction)
+        .filter(Transaction.id == tx_id, Transaction.user_id == user.id)
+        .first()
+    )
     if not tx:
         raise HTTPException(status_code=404, detail="Not found")
+
     # update fields
     tx.type = data.type
     tx.amount = data.amount
     tx.note = data.note
     tx.category_id = data.category_id
+
     if hasattr(data, "date") and data.date:
         tx.date = data.date
+
     tx.updated_at = datetime.utcnow()
+
     db.commit()
     db.refresh(tx)
     return tx
