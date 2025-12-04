@@ -112,3 +112,20 @@ def delete_tx(
     ).delete()
     db.commit()
     return {"deleted": True}
+
+@router.put("/{tx_id}", response_model=TransactionOut)
+def update_tx(data: TransactionCreate, tx_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    tx = db.query(Transaction).filter(Transaction.id == tx_id, Transaction.user_id == user.id).first()
+    if not tx:
+        raise HTTPException(status_code=404, detail="Not found")
+    # update fields
+    tx.type = data.type
+    tx.amount = data.amount
+    tx.note = data.note
+    tx.category_id = data.category_id
+    if hasattr(data, "date") and data.date:
+        tx.date = data.date
+    tx.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(tx)
+    return tx
