@@ -26,3 +26,7 @@ class FCMTokenIn(BaseModel):
 
 class ForgotPasswordIn(BaseModel):
     email: EmailStr
+
+class ChangePasswordIn(BaseModel):
+    current_password: str
+    new_password: str

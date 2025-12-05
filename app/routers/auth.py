@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 import secrets
 
 from app.database import get_db
-from app.schemas.user import UserCreate, UserLogin, UserOut, FCMTokenIn, ForgotPasswordIn
+from app.schemas.user import UserCreate, UserLogin, UserOut, FCMTokenIn, ForgotPasswordIn, ChangePasswordIn
 from app.models.user import User
 from app.security import hash_password, verify_password, create_access_token
 from app.services.auth import get_current_user  # 👈 dùng để lấy user từ JWT
@@ -96,3 +96,27 @@ Money Manager
         )
 
     return {"detail": "Mật khẩu mới đã được gửi qua email của bạn."}
+
+@router.post("/change-password")
+def change_password(
+    data: ChangePasswordIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # 1. check mật khẩu hiện tại
+    if not verify_password(data.current_password, current_user.password):
+        raise HTTPException(status_code=400, detail="Mật khẩu hiện tại không đúng")
+
+    # 2. validate mật khẩu mới
+    if len(data.new_password) < 6:
+        raise HTTPException(
+            status_code=400,
+            detail="Mật khẩu mới phải có ít nhất 6 ký tự",
+        )
+
+    # 3. update DB
+    current_user.password = hash_password(data.new_password)
+    db.commit()
+    db.refresh(current_user)
+
+    return {"detail": "Đổi mật khẩu thành công"}
