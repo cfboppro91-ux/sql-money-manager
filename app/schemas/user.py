@@ -23,3 +23,6 @@ class UserOut(BaseModel):
 
 class FCMTokenIn(BaseModel):
     fcm_token: str
+
+class ForgotPasswordIn(BaseModel):
+    email: EmailStr

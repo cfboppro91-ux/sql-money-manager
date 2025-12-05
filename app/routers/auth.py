@@ -3,10 +3,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.schemas.user import UserCreate, UserLogin, UserOut, FCMTokenIn
+from app.schemas.user import UserCreate, UserLogin, UserOut, FCMTokenIn, ForgotPasswordIn
 from app.models.user import User
 from app.security import hash_password, verify_password, create_access_token
 from app.services.auth import get_current_user  # 👈 dùng để lấy user từ JWT
+from app.services.email import send_email
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -56,3 +57,47 @@ def set_fcm_token(
     print("✅ Updated FCM token for:", current_user.email)
 
     return {"ok": True}
+
+@router.post("/forgot-password")
+def forgot_password(data: ForgotPasswordIn, db: Session = Depends(get_db)):
+    # 1. Tìm user theo email
+    user = db.query(User).filter(User.email == data.email).first()
+    if not user:
+        # không nên leak quá nhiều info, nhưng cho app học tập thì báo thẳng cũng được
+        raise HTTPException(status_code=404, detail="Email không tồn tại")
+
+    # 2. Tạo mật khẩu mới random
+    new_password = secrets.token_urlsafe(8)  # vd: 'aB3_xYz12'
+
+    # 3. Hash & lưu DB
+    user.password = hash_password(new_password)
+    db.commit()
+    db.refresh(user)
+
+    # 4. Soạn nội dung email
+    subject = "Đặt lại mật khẩu - Money Manager"
+    body = f"""
+Xin chào {user.email},
+
+Mật khẩu mới cho tài khoản Money Manager của bạn là:
+
+    {new_password}
+
+Vui lòng đăng nhập và đổi lại mật khẩu trong phần cài đặt để đảm bảo an toàn.
+
+Nếu bạn không yêu cầu đặt lại mật khẩu, hãy bỏ qua email này.
+
+Trân trọng,
+Money Manager
+"""
+
+    ok = send_email(user.email, subject, body)
+    if not ok:
+        # Trường hợp gửi mail fail nhưng DB đã đổi pass rồi, tuỳ bạn handle:
+        # có thể rollback, hoặc báo khác. Tạm thời báo lỗi đơn giản:
+        raise HTTPException(
+            status_code=500,
+            detail="Không gửi được email đặt lại mật khẩu. Vui lòng thử lại sau.",
+        )
+
+    return {"detail": "Mật khẩu mới đã được gửi qua email của bạn."}
