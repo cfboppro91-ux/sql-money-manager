@@ -1,6 +1,7 @@
 # app/routers/auth.py
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+import secrets
 
 from app.database import get_db
 from app.schemas.user import UserCreate, UserLogin, UserOut, FCMTokenIn, ForgotPasswordIn
