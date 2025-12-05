@@ -94,11 +94,10 @@ Money Manager
 
     ok = send_email(user.email, subject, body)
     if not ok:
-        # Trường hợp gửi mail fail nhưng DB đã đổi pass rồi, tuỳ bạn handle:
-        # có thể rollback, hoặc báo khác. Tạm thời báo lỗi đơn giản:
+        # DEV: tạm return 500 + message dễ hiểu hơn
         raise HTTPException(
             status_code=500,
-            detail="Không gửi được email đặt lại mật khẩu. Vui lòng thử lại sau.",
+            detail="DEV: send_email() trả về False. Vào Render Logs xem 'Error sending email' để biết lý do.",
         )
 
     return {"detail": "Mật khẩu mới đã được gửi qua email của bạn."}
