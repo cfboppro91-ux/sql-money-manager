@@ -61,21 +61,16 @@ def set_fcm_token(
 
 @router.post("/forgot-password")
 def forgot_password(data: ForgotPasswordIn, db: Session = Depends(get_db)):
-    # 1. Tìm user theo email
     user = db.query(User).filter(User.email == data.email).first()
     if not user:
-        # không nên leak quá nhiều info, nhưng cho app học tập thì báo thẳng cũng được
         raise HTTPException(status_code=404, detail="Email không tồn tại")
 
-    # 2. Tạo mật khẩu mới random
-    new_password = secrets.token_urlsafe(8)  # vd: 'aB3_xYz12'
+    new_password = secrets.token_urlsafe(8)
 
-    # 3. Hash & lưu DB
     user.password = hash_password(new_password)
     db.commit()
     db.refresh(user)
 
-    # 4. Soạn nội dung email
     subject = "Đặt lại mật khẩu - Money Manager"
     body = f"""
 Xin chào {user.email},
@@ -84,7 +79,7 @@ Mật khẩu mới cho tài khoản Money Manager của bạn là:
 
     {new_password}
 
-Vui lòng đăng nhập và đổi lại mật khẩu trong phần cài đặt để đảm bảo an toàn.
+Vui lòng đăng nhập và đổi lại mật khẩu trong phần cài đặt.
 
 Nếu bạn không yêu cầu đặt lại mật khẩu, hãy bỏ qua email này.
 
@@ -94,10 +89,10 @@ Money Manager
 
     ok = send_email(user.email, subject, body)
     if not ok:
-        # DEV: tạm return 500 + message dễ hiểu hơn
+        # tuỳ bạn, dev mode có thể trả new_password về luôn
         raise HTTPException(
             status_code=500,
-            detail="DEV: send_email() trả về False. Vào Render Logs xem 'Error sending email' để biết lý do.",
+            detail="Không gửi được email đặt lại mật khẩu. Vui lòng thử lại sau.",
         )
 
     return {"detail": "Mật khẩu mới đã được gửi qua email của bạn."}
